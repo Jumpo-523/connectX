@@ -9,7 +9,6 @@ from tqdm.notebook import tqdm
 from kaggle_environments import evaluate, make
 import kaggle_environments
 
-import pdb; pdb.set_trace()
 
 
 class ConnectX(gym.Env):
@@ -142,3 +141,6 @@ class DQN:
         result.append(state.mark)
 
         return result
+
+    def clone(self):
+        return State(self.left, self.right)

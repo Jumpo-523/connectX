@@ -4,15 +4,16 @@ import gym
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from tqdm.notebook import tqdm
 from kaggle_environments import evaluate, make
 import kaggle_environments
-
+# https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 
 class ConnectX(gym.Env):
-    def __init__(self, switch_prob=0.5):
+    def __init__(self, switch_prob=0.5, pair=[]):
         self.env = make('connectx', debug=False)
         self.pair = [None, 'random']
         self.trainer = self.env.train(self.pair)
@@ -43,6 +44,10 @@ class DeepModel(nn.Module):
     def __init__(self, num_states, hidden_units, num_actions):
         super(DeepModel, self).__init__()
         self.hidden_layers = nn.ModuleList([])
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(32, 16, 5)
+        self.c_h = nn.Linear(288, 42)
         for i in range(len(hidden_units)):
             if i == 0:
                 self.hidden_layers.append(
@@ -55,8 +60,16 @@ class DeepModel(nn.Module):
         self.output_layer = nn.Linear(hidden_units[-1], num_actions)
 
     def forward(self, x):
+        # input (1, 42)
+        x = x.view((-1,1, 6, 7))
+        # Size changes from (1, 6, 7) to (16, 32, 32)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = x.view(1, -1)
+        x = self.c_h(x)
         for layer in self.hidden_layers:
             x = torch.sigmoid(layer(x))
+        
+        # output shape (1, 42)
         x = self.output_layer(x)
 
         return x
@@ -91,6 +104,8 @@ class DQN:
         # Prepare labels for training process
         states_next = np.asarray([self.preprocess(self.experience['s2'][i]) for i in ids])
         dones = np.asarray([self.experience['done'][i] for i in ids])
+        import pdb; pdb.set_trace()
+
         value_next = np.max(TargetNet.predict(states_next).detach().numpy(), axis=1)
         actual_values = np.where(dones, rewards, rewards+self.gamma*value_next)
 
@@ -138,9 +153,43 @@ class DQN:
     # in the observations
     def preprocess(self, state):
         result = state.board[:]
-        result.append(state.mark)
+        # takubo could not understand. 
+        # First of all, whose reward was optimized????
+        # result.append(state.mark) # comment out by tkb
 
         return result
 
-    def clone(self):
-        return State(self.left, self.right)
+
+
+
+def set_direction(d, direction):
+    if direction == "row":
+        dx, dy = d, 0
+    elif direction == "col":
+        dx, dy = 0, d
+    elif direction == "diag":
+        dx, dy = d, d
+    elif direction == "anti-diag":
+        dx, dy = d, -1*d
+    return dx, dy 
+
+def count_seq(new_stone_loc, state,mark):
+    """change state for each direction"""
+    ans = 0
+    i, j = new_stone_loc
+    for direction in ["row", "col", "diag", "anti-diag"]:
+        count_sequences = 0
+        for dir_ in [1, -1]:
+            for d in range(4):
+                try:
+                    dx, dy = set_direction(dir_*d,direction)
+                    if dx == 0 and dy == 0:
+                        continue
+                    elif state[i + dx, j + dy] == mark:
+                        count_sequences += 1
+                    else:
+                        break
+                except IndexError:
+                    break
+        ans = max(count_sequences, ans)
+    return ans

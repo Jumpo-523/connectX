@@ -43,11 +43,6 @@ class ConnectX(gym.Env):
 class DeepModel(nn.Module):
     def __init__(self, num_states, hidden_units, num_actions):
         super(DeepModel, self).__init__()
-        self.hidden_layers = nn.ModuleList([])
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.conv2 = nn.Conv2d(32, 16, 5)
-        self.c_h = nn.Linear(288, 42)
         for i in range(len(hidden_units)):
             if i == 0:
                 self.hidden_layers.append(
@@ -60,12 +55,6 @@ class DeepModel(nn.Module):
         self.output_layer = nn.Linear(hidden_units[-1], num_actions)
 
     def forward(self, x):
-        # input (1, 42)
-        x = x.view((-1,1, 6, 7))
-        # Size changes from (1, 6, 7) to (16, 32, 32)
-        x = self.pool(F.relu(self.conv1(x)))
-        x = x.view(1, -1)
-        x = self.c_h(x)
         for layer in self.hidden_layers:
             x = torch.sigmoid(layer(x))
         
@@ -74,13 +63,43 @@ class DeepModel(nn.Module):
 
         return x
 
+class CNN_model(nn.Module):
+
+    def __init__(self, h, w, outputs):
+
+        super(CNN_model, self).__init__()
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=2, stride=1)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=2, stride=1)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=2, stride=1)
+        self.bn3 = nn.BatchNorm2d(32)
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size = 2, stride = 1):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
+        linear_input_size = convw * convh * 32
+        self.head = nn.Linear(linear_input_size, outputs)
+
+    # Called with either one element to determine next action, or a batch
+    # during optimization. Returns tensor([[left0exp,right0exp]...]).
+    def forward(self, x):
+        # import pdb; pdb.set_trace()
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        return self.head(x.view(x.size(0), -1))
+
 
 class DQN:
     def __init__(self, num_states, num_actions, hidden_units, gamma, max_experiences, min_experiences, batch_size, lr):
         self.num_actions = num_actions
         self.batch_size = batch_size
         self.gamma = gamma
-        self.model = DeepModel(num_states, hidden_units, num_actions)
+        self.model = CNN_model(6,7, num_actions)# height:6, width: 7 in the game.
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.criterion = nn.MSELoss()
         self.experience = {'s': [], 'a': [], 'r': [], 's2': [], 'done': []} # The buffer
@@ -88,7 +107,7 @@ class DQN:
         self.min_experiences = min_experiences
 
     def predict(self, inputs):
-        return self.model(torch.from_numpy(inputs).float())
+        return self.model(torch.from_numpy(inputs).float().view(-1, 1, 6, 7))
 
     def train(self, TargetNet):
         if len(self.experience['s']) < self.min_experiences:
@@ -104,7 +123,7 @@ class DQN:
         # Prepare labels for training process
         states_next = np.asarray([self.preprocess(self.experience['s2'][i]) for i in ids])
         dones = np.asarray([self.experience['done'][i] for i in ids])
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         value_next = np.max(TargetNet.predict(states_next).detach().numpy(), axis=1)
         actual_values = np.where(dones, rewards, rewards+self.gamma*value_next)

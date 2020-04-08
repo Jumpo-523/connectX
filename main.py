@@ -23,9 +23,9 @@ def reward_coordination(obs, prev_obs):
     obs_mat = np.array(obs.board).reshape(-1,7)
     prev_obs_mat = np.array(prev_obs.board).reshape(-1,7)
     new_stone_loc = np.where(obs_mat - prev_obs_mat == obs.mark)
-    count_seq(new_stone_loc, obs_mat, obs.mark)
+    out = count_seq(new_stone_loc, obs_mat, obs.mark)
 
-    return 0.5
+    return out
 
 
 
@@ -57,7 +57,7 @@ def play_game(env, TrainNet, TargetNet, epsilon, copy_step):
 
             # Try to promote the agent to "struggle" when playing against negamax agent
             # as Magolor's (@magolor) idea
-            reward = reward_coordination(observations, prev_observations) * 5
+            reward = reward_coordination(observations, prev_observations) * 0.5
 
         rewards += reward
 
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     min_epsilon = 0.01
     episodes = 50000
     precision = 7
-
+    # import pdb; pdb.set_trace()
     # prepare the agents
 
     num_states = env.observation_space.n
@@ -122,12 +122,12 @@ if __name__ == "__main__":
         if n % 5000 == 0:
             TrainNet_adversarial = copy.deepcopy(TrainNet)
             env = ConnectX(switch_prob=0, pair=[None, TrainNet_adversarial])
-            range_st = n//5000
-            range_ed = range_st + 5000
-            plt.plot(all_avg_rewards[range_st:range_ed])
-            plt.xlabel('Episode')
-            plt.ylabel('Avg rewards (100)')
-            plt.show()
+            # range_st = n//5000
+            # range_ed = range_st + 5000
+            # plt.plot(all_avg_rewards[range_st:range_ed])
+            # plt.xlabel('Episode')
+            # plt.ylabel('Avg rewards (100)')
+            # plt.show()
     plt.plot(all_avg_rewards)
     plt.xlabel('Episode')
     plt.ylabel('Avg rewards (100)')
